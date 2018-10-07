@@ -39,6 +39,7 @@ func ServeAPI(r *mux.Router, c *core.Core, v string, l *memorywriter.MemoryWrite
 	r.HandleFunc("/release/{session}", api.Release)
 	r.HandleFunc("/call/{session}", api.Call)
 	r.HandleFunc("/post/{session}", api.Post)
+	r.HandleFunc("/read/{session}", api.Read)
 
 	corsv, err := corsValidator()
 	if err != nil {
@@ -156,14 +157,18 @@ func (a *api) Release(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) Call(w http.ResponseWriter, r *http.Request) {
-	a.call(w, r, false)
+	a.call(w, r, false, false)
 }
 
 func (a *api) Post(w http.ResponseWriter, r *http.Request) {
-	a.call(w, r, true)
+	a.call(w, r, true, false)
 }
 
-func (a *api) call(w http.ResponseWriter, r *http.Request, skipRead bool) {
+func (a *api) Read(w http.ResponseWriter, r *http.Request) {
+	a.call(w, r, false, true)
+}
+
+func (a *api) call(w http.ResponseWriter, r *http.Request, skipRead, skipWrite bool) {
 	a.log("call - start")
 	cn, ok := w.(http.CloseNotifier)
 	if !ok {
@@ -175,19 +180,21 @@ func (a *api) call(w http.ResponseWriter, r *http.Request, skipRead bool) {
 	vars := mux.Vars(r)
 	session := vars["session"]
 
-	hexbody, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		a.respondError(w, err)
-		return
+	var binbody []byte
+	if !skipWrite {
+		hexbody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			a.respondError(w, err)
+			return
+		}
+		binbody, err = hex.DecodeString(string(hexbody))
+		if err != nil {
+			a.respondError(w, err)
+			return
+		}
 	}
 
-	binbody, err := hex.DecodeString(string(hexbody))
-	if err != nil {
-		a.respondError(w, err)
-		return
-	}
-
-	binres, err := a.core.Call(binbody, session, skipRead, cnn)
+	binres, err := a.core.Call(binbody, session, skipRead, skipWrite, cnn)
 	if err != nil {
 		a.respondError(w, err)
 		return
